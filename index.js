@@ -17,7 +17,8 @@ app.get('/', (req, res) => {
 })
 
 app.get('/alunos/*', (req, res) => {
-	let ra = req.url.replace('/alunos/', '')
+	console.log('get', req.body)
+	let ra = req.url.replace('/alunos/', '').trim()
 	executeSql(
 		'select * from agenda.aluno where ra = @ra',
 		{ fields: [['ra', sql.Char, ra]] },
@@ -28,18 +29,24 @@ app.get('/alunos/*', (req, res) => {
 })
 
 app.get('/alunos', (req, res) => {
-	executeSql('select * from agenda.aluno', null, (result) => {
-		res.json(result)
-	})
+	console.log('get alunos')
+	executeSql(
+		'select * from agenda.aluno order by cast(ra as int)',
+		null,
+		(result) => {
+			res.json(result)
+		}
+	)
 })
 
 app.post('/alunos', (req, res) => {
-	let ra = req.body.ra
-	let nome = req.body.nome
-	let email = req.body.email
+	console.log('post', req.body)
+	let ra = req.body.ra.trim()
+	let nome = req.body.nome.trim()
+	let email = req.body.email.trim()
 
 	if (!ra || !nome || !email) {
-		res.sendStatus(400)
+		res.status(400).json({ status: 'Bad Request' })
 		return
 	}
 
@@ -53,23 +60,24 @@ app.post('/alunos', (req, res) => {
 			],
 		},
 		(result) => {
-			if (result.error) {
-				res.json(result)
-				return
-			}
+			if (result.error) result.status = 400
+			else result.status = 200
+			res.json(result)
+			return
 		}
 	)
 
-	res.sendStatus(200)
+	/*res.status(200).json({ status: 'OK' })*/
 })
 
 app.put('/alunos', (req, res) => {
-	let ra = req.body.ra
-	let nome = req.body.nome
-	let email = req.body.email
+	console.log('put', req.body)
+	let ra = req.body.ra.trim()
+	let nome = req.body.nome.trim()
+	let email = req.body.email.trim()
 
 	if (!ra) {
-		res.sendStatus(400)
+		res.status(400).json({ status: 'Bad Request' })
 		return
 	}
 
@@ -109,11 +117,17 @@ app.put('/alunos', (req, res) => {
 		)
 	}
 
-	res.sendStatus(200)
+	res.status(200).json({ status: 'OK' })
 })
 
 app.delete('/alunos', (req, res) => {
-	let ra = req.body.ra
+	console.log('delete', req.body)
+	let ra = req.body.ra.trim()
+
+	if (!ra) {
+		res.status(400).json({ status: 'Bad Request' })
+		return
+	}
 
 	executeSql(
 		'delete from agenda.aluno where ra = @ra',
@@ -126,7 +140,7 @@ app.delete('/alunos', (req, res) => {
 		}
 	)
 
-	res.sendStatus(200)
+	res.status(200).json({ status: 'OK' })
 })
 
 async function executeSql(query, fields, callback) {
@@ -138,15 +152,21 @@ async function executeSql(query, fields, callback) {
 				request.input(field[0], field[1], field[2])
 			})
 		const result = await request.query(query)
+		let resParse = []
+		result.recordset.forEach((res) => {
+			resParse.push({ ra: res.RA, nome: res.Nome, email: res.Email })
+		})
 		callback({
 			rowsAffected: result.rowsAffected[0],
-			recordset: result.recordset,
+			recordset: resParse,
 		})
 	} catch (err) {
-		let error = err.originalError.info.message
-		if (error.includes('Violation of PRIMARY KEY'))
-			error = 'Registro já existe'
-
+		let error
+		try {
+			let dbError = err.originalError.info.message
+			if (dbError.includes('Violation of PRIMARY KEY'))
+				error = 'Registro já existe'
+		} catch (e) {}
 		callback({
 			rowsAffected: 0,
 			recordset: [],
